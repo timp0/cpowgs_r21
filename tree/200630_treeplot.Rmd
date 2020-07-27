@@ -1,0 +1,127 @@
+---
+title: "Plotting Trees with colorsk"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+
+library(knitr)
+library(tidyverse)
+library(treeio)
+library(readxl)
+library(ggtree)
+workdir="/atium/Data/Nanopore/cpowgs/trees/200630_tree/"
+opts_knit$set(root.dir=workdir)
+
+#Pass to bash
+Sys.setenv(workdir=workdir)
+
+```
+
+Ok - the goal for this notebook is to generate plots of the raxml trees  we generated with colored tips, etc from the metadata from Trish
+
+First read the meta info
+
+```{r}
+
+meta.klpn=read_excel("200630_trish_meta.xlsx", sheet="KLPN") %>%
+  mutate(label=paste0("KLPN_", `Study ID`)) %>%
+  select(label, MLST, Year) %>%
+  replace_na(list(MLST="unknown", Year="unknown"))
+meta.encl=read_excel("200630_trish_meta.xlsx", sheet="ENCL") %>%
+  mutate(label=paste0("ENCL_", `STOCK ID`)) 
+#  select(label, MLST, Year) %>%
+#  replace_na(list(MLST="unknown", Year="unknown"))    
+meta.esco=read_excel("200630_trish_meta.xlsx", sheet="ESCO") %>%
+  mutate(label=paste0("ESCO_", `STUDY ID`)) %>%
+  select(label, MLST, Year) %>%
+  replace_na(list(MLST="unknown", Year="unknown"))
+  
+  
+```
+
+Now let's try to get the trees in from the raxml
+
+```{r}
+
+tree.root="/atium/Data/Nanopore/cpowgs/trees/200408_timp_tree"
+tree.klpn=read.tree(file.path(tree.root, "raxml_klpn/RAxML_bestTree.testrapid.tree" ))
+tbl.klpn=as_tibble(tree.klpn) %>%
+  left_join(meta.klpn)
+phy.klpn=as.treedata(tbl.klpn)
+
+tree.encl=read.tree(file.path(tree.root, "raxml_encl/RAxML_bestTree.testrapid.tree" ))
+tbl.encl=as_tibble(tree.encl) %>%
+  left_join(meta.encl)
+phy.encl=as.treedata(tbl.encl)
+
+tree.esco=read.tree(file.path(tree.root, "raxml_esco/RAxML_bestTree.testrapid.tree" ))
+tbl.esco=as_tibble(tree.esco) %>%
+  left_join(meta.esco)
+phy.esco=as.treedata(tbl.esco)
+
+
+
+#phy.klpn=tree.klpn %<+% meta.klpn
+
+```
+
+
+Now let's plot the tree
+
+
+
+```{r}
+#pdf("~/Dropbox/timplab_data/cpowgs/200707_tree/klpn_tree.pdf")
+print(ggtree(phy.klpn)+geom_tippoint(aes(color=as.factor(Year)))+theme(legend.position="right")+ggtitle("klpn"))
+print(ggtree(phy.esco)+geom_tippoint(aes(color=as.factor(Year)))+theme(legend.position="right")+ggtitle("esco"))
+print(ggtree(phy.encl)+geom_tippoint(aes(color=as.factor(Year)))+theme(legend.position="right")+ggtitle("encl"))
+#dev.off()
+```
+
+Ok - now let's try to add MLST
+
+Notes from: 
+https://groups.google.com/forum/?utm_medium=email&utm_source=footer#!msg/bioc-ggtree/Q4LnwoTf1DM/uqYdYB_VBAAJ
+https://yulab-smu.github.io/treedata-book/chapter2.html#data-integration
+
+for groupOTU which is what I think I need, I'm supposed to crate a list of OTUs of the child node labels? meta.klpn has this info, right?  So what I need to do is somehow cluster
+
+```{r}
+
+grouped=meta.klpn %>%
+  group_by(MLST) %>%
+  summarize(mlst_group=list(label))
+
+mlst_list=grouped$mlst_group
+names(mlst_list)=grouped$MLST
+
+phy.klpn.group=groupOTU(phy.klpn, mlst_list)
+
+```
+
+```{r}
+
+pdf("~/Dropbox/timplab_data/cpowgs/200707_tree/klpn_tree_mlst.pdf")
+print(ggtree(phy.klpn)+geom_tippoint(aes(color=as.factor(MLST)))+theme(legend.position="right")+ggtitle("klpn"))
+print(ggtree(phy.klpn, aes(color=as.factor(MLST)))+theme(legend.position="right")+ggtitle("klpn"))
+print(ggtree(phy.klpn.group, aes(color=group))+theme(legend.position="right")+ggtitle("klpn"))
+print(ggtree(phy.klpn, layout='circular', aes(color=as.factor(MLST)))+theme(legend.position="right")+ggtitle("klpn"))
+print(ggtree(phy.klpn.group, layout='circular', aes(color=group))+theme(legend.position="right")+ggtitle("klpn"))
+dev.off()
+
+```
+Ok - let's go back to heatmap stuff now for a minute
+
+```{r}
+
+df.klpn=data.frame(meta.klpn$MLST)
+rownames(df.klpn)=meta.klpn$label
+
+p1=ggtree(phy.klpn)+geom_tippoint(aes(color=as.factor(Year)))
+p2=gheatmap(p1, df.klpn, width=0.2)+theme(legend.position='none')
+
+pdf("~/Dropbox/timplab_data/cpowgs/200707_tree/klpn_tree_mlst_hmap.pdf")
+print(p2)
+dev.off()
+```
