@@ -102,13 +102,14 @@ phy.klpn.group=groupOTU(phy.klpn, mlst_list)
 
 ```{r}
 
-pdf("~/Dropbox/timplab_data/cpowgs/200707_tree/klpn_tree_mlst.pdf")
+#pdf("~/Dropbox/timplab_data/cpowgs/200707_tree/klpn_tree_mlst.pdf")
 print(ggtree(phy.klpn)+geom_tippoint(aes(color=as.factor(MLST)))+theme(legend.position="right")+ggtitle("klpn"))
 print(ggtree(phy.klpn, aes(color=as.factor(MLST)))+theme(legend.position="right")+ggtitle("klpn"))
 print(ggtree(phy.klpn.group, aes(color=group))+theme(legend.position="right")+ggtitle("klpn"))
 print(ggtree(phy.klpn, layout='circular', aes(color=as.factor(MLST)))+theme(legend.position="right")+ggtitle("klpn"))
 print(ggtree(phy.klpn.group, layout='circular', aes(color=group))+theme(legend.position="right")+ggtitle("klpn"))
-dev.off()
+
+#dev.off()
 
 ```
 Ok - let's go back to heatmap stuff now for a minute
@@ -121,7 +122,54 @@ rownames(df.klpn)=meta.klpn$label
 p1=ggtree(phy.klpn)+geom_tippoint(aes(color=as.factor(Year)))
 p2=gheatmap(p1, df.klpn, width=0.2)+theme(legend.position='none')
 
-pdf("~/Dropbox/timplab_data/cpowgs/200707_tree/klpn_tree_mlst_hmap.pdf")
+#pdf("~/Dropbox/timplab_data/cpowgs/200707_tree/klpn_tree_mlst_hmap.pdf")
 print(p2)
+#dev.off()
+```
+Ok - point by Trish - can we look for only those MLST types that have more than some threshold.  Let's see what that threshold should be first:
+
+```{r}
+
+#kable(sort(table(meta.klpn$MLST), decreasing=T)[0:10])
+
+```
+
+Ok - it looks like 4 might be a natural cutoff
+
+```{r}
+
+filt.meta.klpn=meta.klpn %>%
+  group_by(MLST) %>%
+  add_tally() %>%
+  mutate(filtMLST=ifelse(n>3, MLST, NA)) %>%
+  ungroup()
+filt.meta.klpn$filtMLST[filt.meta.klpn$filtMLST=="unknown"]=NA
+
+tbl.klpn=as_tibble(tree.klpn) %>%
+  left_join(filt.meta.klpn)
+phy.klpn=as.treedata(tbl.klpn)
+```
+
+Ok - replot
+
+
+```{r}
+
+pdf("~/Dropbox/timplab_data/cpowgs/200707_tree/filt_klpn_tree_mlst.pdf")
+print(ggtree(phy.klpn)+geom_tippoint(aes(subset=!is.na(filtMLST), color=as.factor(filtMLST)))+theme(legend.position="right")+ggtitle("klpn"))
+print(ggtree(phy.klpn, aes(color=as.factor(filtMLST)))+theme(legend.position="right")+ggtitle("klpn"))
+print(ggtree(phy.klpn, layout='circular', aes(subset=!is.na(filtMLST), color=as.factor(filtMLST)))+theme(legend.position="right")+ggtitle("klpn"))
+#print(ggtree(phy.klpn.group, layout='circular', aes(color=group))+theme(legend.position="right")+ggtitle("klpn"))
 dev.off()
+
+
+df.klpn=data.frame(filt.meta.klpn$Year)
+rownames(df.klpn)=meta.klpn$label
+
+p1=ggtree(phy.klpn)+geom_tippoint(aes(color=as.factor(Year)))
+p2=gheatmap(p1, df.klpn, width=0.2)+theme(legend.position='none')
+
+#pdf("~/Dropbox/timplab_data/cpowgs/200707_tree/klpn_tree_mlst_hmap.pdf")
+print(p2)
+#dev.off()
 ```
