@@ -1,0 +1,223 @@
+---
+title: "Plotting Trees with colorsk"
+output: html_notebook
+---
+
+```{r setup, include=FALSE}
+
+library(knitr)
+library(tidyverse)
+library(treeio)
+library(readxl)
+library(ggtree)
+library(rdrop2)
+workdir="/atium/Data/Nanopore/cpowgs/trees/200811_timp_tree/"
+dboxdir="timplab_data/cpowgs/201103_tree/"
+opts_knit$set(root.dir=workdir)
+
+#Pass to bash
+Sys.setenv(workdir=workdir)
+
+token=readRDS("~/201104_timpdropbox.rds")
+drop_acc(dtoken=token)
+
+```
+
+Ok - the goal for this notebook is to generate plots of the raxml trees  we generated with colored tips, etc from the metadata from Trish
+
+First read the meta info.  I have to pull this back from dropbox - (I used to sync dropbox, but that's gone now)
+
+```{r}
+
+listing=drop_dir(dboxdir, dtoken=token)
+
+listing=listing %>%
+  filter(str_detect(listing$name, ".csv$"))
+
+#get files
+for(file in listing$path_lower){
+  drop_download(file, dtoken=token, overwrite=TRUE)
+}
+
+
+```
+
+Now open those csv files.
+
+```{r, message=FALSE}
+
+meta.klpn=read_csv("klpn.csv") %>%
+  select(-X1) %>%
+  filter(!(is.na(pilon)&is.na(spades))) %>%
+  mutate(label=ifelse(!is.na(pilon), paste0("klpn_pilon_", id), paste0("klpn_spades_", id)))
+
+meta.encl=read_csv("encl.csv") %>%
+  select(-X1) %>%
+  filter(!(is.na(pilon)&is.na(spades))) %>%
+  mutate(label=ifelse(!is.na(pilon), paste0("encl_pilon_", id), paste0("encl_spades_", id)))
+
+meta.esco=read_csv("esco.csv") %>%
+  select(-X1) %>%
+  filter(!(is.na(pilon)&is.na(spades))) %>%
+  mutate(label=ifelse(!is.na(pilon), paste0("esco_pilon_", id), paste0("esco_spades_", id)))
+
+```
+Now let's pull in the MLST:
+
+```{r, message=FALSE}
+
+mlst.klpn=read_tsv("klpn_mlst.tsv", col_names=FALSE) %>%
+  mutate(label=str_split_fixed(X1, "[/.]",3)[,2]) %>%
+  rename(timp_mlst=X3)
+
+meta.klpn=left_join(meta.klpn, mlst.klpn)
+
+mlst.encl=read_tsv("encl_mlst.tsv", col_names=FALSE) %>%
+  mutate(label=str_split_fixed(X1, "[/.]",3)[,2]) %>%
+  rename(timp_mlst=X3)
+
+meta.encl=left_join(meta.encl, mlst.encl)
+
+mlst.esco=read_tsv("esco_mlst.tsv", col_names=FALSE) %>%
+  mutate(label=str_split_fixed(X1, "[/.]",3)[,2]) %>%
+  rename(timp_mlst=X3)
+
+meta.esco=left_join(meta.esco, mlst.esco)
+
+```
+
+Point by Trish - can we look for only those MLST types that have more than some threshold.  Let's see what that threshold should be first:
+
+Ok - it looks like 4 might be a natural cutoff
+
+```{r}
+
+filt.meta.klpn=meta.klpn %>%
+  group_by(timp_mlst) %>%
+  add_tally() %>%
+  mutate(filt.mlst=ifelse(n>3, timp_mlst, NA)) %>%
+  ungroup()
+filt.meta.klpn$filt.mlst[filt.meta.klpn$filt.mlst=="-"]=NA
+
+filt.meta.encl=meta.encl %>%
+  group_by(timp_mlst) %>%
+  add_tally() %>%
+  mutate(filt.mlst=ifelse(n>3, timp_mlst, NA)) %>%
+  ungroup()
+filt.meta.encl$filt.mlst[filt.meta.encl$filt.mlst=="-"]=NA
+
+filt.meta.esco=meta.esco %>%
+  group_by(timp_mlst) %>%
+  add_tally() %>%
+  mutate(filt.mlst=ifelse(n>3, timp_mlst, NA)) %>%
+  ungroup()
+filt.meta.esco$filt.mlst[filt.meta.esco$filt.mlst=="-"]=NA
+
+```
+
+
+Now let's try to get the trees in from the raxml
+
+```{r}
+
+tree.root="/atium/Data/Nanopore/cpowgs/trees/200811_timp_tree"
+tree.klpn=read.tree(file.path(tree.root, "raxml_klpn/RAxML_bestTree.testrapid.tree" ))
+tbl.klpn=as_tibble(tree.klpn) %>%
+  left_join(filt.meta.klpn)
+phy.klpn=as.treedata(tbl.klpn)
+
+tree.encl=read.tree(file.path(tree.root, "raxml_encl/RAxML_bestTree.testrapid.tree" ))
+tbl.encl=as_tibble(tree.encl) %>%
+  left_join(filt.meta.encl)
+phy.encl=as.treedata(tbl.encl)
+
+tree.esco=read.tree(file.path(tree.root, "raxml_esco/RAxML_bestTree.testrapid.tree" ))
+tbl.esco=as_tibble(tree.esco) %>%
+  left_join(filt.meta.esco)
+phy.esco=as.treedata(tbl.esco)
+
+
+```
+
+
+Now let's plot the tree
+
+```{r}
+pdf("plots/trees.pdf")
+print(ggtree(phy.klpn)+geom_tippoint(aes(color=as.factor(year)))+theme(legend.position="right")+ggtitle("klpn"))
+print(ggtree(phy.esco)+geom_tippoint(aes(color=as.factor(year)))+theme(legend.position="right")+ggtitle("esco"))
+print(ggtree(phy.encl)+geom_tippoint(aes(color=as.factor(year)))+theme(legend.position="right")+ggtitle("encl"))
+dev.off()
+drop_upload("plots/trees.pdf", "timplab_data/cpowgs/201103_tree/", dtoken=token)
+```
+
+
+
+Ok - replot
+
+
+```{r}
+
+full_plot<-function(phyobj, meta,label='default') {
+  
+  ##Ok - first, pull the years out of the phyobj data
+  
+  hmap.df=data.frame(as.factor(meta$year))
+  rownames(hmap.df)=meta$label
+  
+  p1=ggtree(phyobj)+geom_tippoint(aes(color=as.factor(filt.mlst)))
+  p2=gheatmap(p1, hmap.df, width=0.1)+theme(legend.position="right")
+  
+  plotfile=paste0("plots/", label, "_tree_mlst_hmap.pdf")
+  pdf(plotfile)
+  print(p2)
+  dev.off()
+  drop_upload(plotfile, dboxdir, dtoken=token)
+}
+
+label_plot<-function(phyobj, meta,label='default') {
+  
+  ##Ok - first, pull the years out of the phyobj data
+  
+  hmap.df=data.frame(as.factor(meta$year))
+  rownames(hmap.df)=meta$label
+  
+  p1=ggtree(phyobj)+geom_tippoint(aes(color=as.factor(filt.mlst)))+geom_tiplab()
+  p2=gheatmap(p1, hmap.df, width=0.1)+theme(legend.position="right")
+  
+  plotfile=paste0("plots/", label, "_tree_mlst_hmap.pdf")
+  pdf(plotfile, height=20, width=20)
+  print(p2)
+  dev.off()
+  drop_upload(plotfile, dboxdir, dtoken=token)
+}
+
+
+```
+
+
+```{r}
+
+full_plot(phy.klpn, filt.meta.klpn, label='klpn')
+full_plot(phy.esco, filt.meta.esco, label='esco')
+full_plot(phy.encl, filt.meta.encl, label='encl')
+```
+
+```{r}
+label_plot(phy.klpn, filt.meta.klpn, label='trish_klpn')
+label_plot(phy.esco, filt.meta.esco, label='trish_esco')
+label_plot(phy.encl, filt.meta.encl, label='trish_encl')
+
+```
+
+Write out those filt.meta csvs and push 'em to dbox:
+
+```{r}
+write_csv(filt.meta.klpn, "plots/filt.meta.klpn.csv")
+drop_upload("plots/filt.meta.klpn.csv", dboxdir, dtoken=token)
+write_csv(filt.meta.encl, "plots/filt.meta.encl.csv")
+drop_upload("plots/filt.meta.encl.csv", dboxdir, dtoken=token)
+write_csv(filt.meta.esco, "plots/filt.meta.esco.csv")
+drop_upload("plots/filt.meta.esco.csv", dboxdir, dtoken=token)
+
+```
